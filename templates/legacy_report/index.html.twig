@@ -1,0 +1,21 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Rapport Legacy — CinéTech{% endblock %}
+
+{% block body %}
+    <h1>Rapport Legacy CinéTech</h1>
+
+    <h2>Notes moyennes</h2>
+    <ul>
+        {% for item in report %}
+            <li>{{ item.label }} — Moyenne : {{ item.average }}/5</li>
+        {% endfor %}
+    </ul>
+
+    <h2>Simulation Tarifs (base 12 €)</h2>
+    <ul>
+        {% for label, price in prices %}
+            <li>{{ label }} : {{ price }} €</li>
+        {% endfor %}
+    </ul>
+{% endblock %}

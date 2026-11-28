@@ -180,6 +180,78 @@ Aucune tâche ne peut passer en `Done` avant que **toutes** les cases suivantes 
 
 ---
 
+### RCA-001 — Issue #13 : module Legacy « Rapport Box-Office » (HTTP 500)
+
+| Champ | Valeur |
+| --- | --- |
+| **Date de détection** | `2026-11-28` |
+| **Environnement** | `dev` (reproduction locale) — défaut générique sur toute instance |
+| **Priorité / Sévérité** | `P0 / sev:blocker` (route inaccessible) |
+| **Issue liée** | `#13` — Sauvetage du module Legacy |
+| **Associé à un hotfix ?** | Non — correction définitive directe sur branche dédiée `fix/issue-13-legacy-report` |
+
+**1. Contexte**
+
+La route `GET /legacy/rapport` (`app_legacy_report`) du module Legacy de reporting box-office renvoyait une **erreur HTTP 500** dès le premier rendu. Le module est repris en TMA ; il repose sur `LegacyBoxOfficeService` (calculs badges / moyennes / tarifs) alimenté par des données de démonstration dans `LegacyReportController`.
+
+Trois anomalies d'ingénierie *silencieuses* (règles du cahier des charges de Claire Moreau) ont également été identifiées en marge du plantage : elles ne produisaient pas d'erreur mais un résultat métier faux.
+
+**2. Étapes pour reproduire**
+
+1. Se placer sur la branche `develop` puis ouvrir la branche `fix/issue-13-legacy-report`.
+2. Vérifier l'enregistrement de la route : `php bin/console debug:router` → `app_legacy_report  GET  /legacy/rapport`.
+3. Appeler la route : `GET /legacy/rapport` (navigateur, ou `WebTestCase`).
+4. Pour le contrôle métier : lire les valeurs affichées pour l'entrée sans tag (`Anatomie d'une chute`), l'entrée aux notes comportant un `null` (`Parasite`), et la simulation tarifaire « Senior (65 ans) » et « Étudiant membre (16 ans, abonné) ».
+
+**3. Résultat obtenu vs Résultat attendu**
+
+| Résultat obtenu (bug) | Résultat attendu (correct) |
+| --- | --- |
+| HTTP **500** (exception fatale) sur `/legacy/rapport` | HTTP **200** avec le rapport affiché |
+| Tag `null` → `TypeError` (`strtoupper(): Argument #1 must be of type string, null given`) | Badge `[STANDARD]` |
+| Notes `[]` → `DivisionByZeroError` ; `null` compté dans le diviseur | `null` ignoré ; aucune note valide → `0` |
+| 65 ans non remisé ; abonné non cumulé | `age >= 65` remisé `-25 %`, cumulable avec `-20 %` abonné |
+
+**4. Cause racine identifiée**
+
+> Evidence collectée en **environnement `dev`** : trace d'exception PHP du `LegacyReportController`, relecture statique de `src/Service/LegacyBoxOfficeService.php` (le service porte `declare(strict_types=1)`), et couverture par tests unitaires ciblés.
+
+- **Anomalie B1 — Typage / valeur nulle (bloquante, cause du 500)**
+  - Élément déclencheur : entrée `['title' => "Anatomie d'une chute", 'tag' => null]`.
+  - Localisation : `LegacyBoxOfficeService::formatBadge()` → `strtoupper($entry['tag'])`.
+  - Analyse : en mode `strict_types`, passer `null` à `strtoupper()` (paramètre `string` non nullable) lève une `TypeError` → exception non gérée → HTTP 500. La donnée `tag` est nullable par conception.
+
+- **Anomalie B2 — Calcul de moyenne sans garde-fou (silencieuse)**
+  - Élément déclencheur : entrée `ratings => []` et entrée contenant `null`.
+  - Localisation : `LegacyBoxOfficeService::calculateAverageRating()` → `array_sum($ratings) / count($ratings)`.
+  - Analyse : division par zéro (`DivisionByZeroError`) quand la liste est vide ; et `count()` incluait les `null` (comptés au diviseur) alors que `array_sum()` les ignore → moyenne **faussée**.
+
+- **Anomalie B3 — Règles tarifaires erronées (silencieuse)**
+  - Élément déclencheur : âge = 65 et client à la fois senior/mineur **et** abonné.
+  - Localisation : `LegacyBoxOfficeService::calculateTicketPrice()` → `if ($age < 18 || $age > 65) { … } elseif ($isMember) { … }`.
+  - Analyse : la borne `> 65` **exclut** les 65 ans (attendu : `>= 65`) ; l'usage d'un `elseif` rend les remises **exclusives**, ce qui empêche le cumul `-25 %` + `-20 %` exigé par le cahier des charges.
+
+- **Anomalie B4 — Contrôle N+1 catalogue (vérification préventive)**
+  - Localisation : `MovieRepository::findAllWithCategory()`, `MovieController::index()`, `templates/movie/index.html.twig`.
+  - Analyse : **aucun N+1 détecté**. La boucle Twig lit `movie.category.name`, mais la requête embarque déjà `->leftJoin('movie.category', 'category')` + `->addSelect('category')`, ce qui hydrate la relation en **une seule requête**. `movie/show.html.twig` ne rend qu'un film (conversion de paramètre) : un lazy-load unique, pas une boucle N+1. `category/index.html.twig` n'accède qu'à `id`/`name`. **Aucun `leftJoin` supplémentaire n'était nécessaire.**
+
+**5. Correctif & Test de non-régression (TNR) associé**
+
+| Élément | Détail |
+| --- | --- |
+| **Correctif appliqué** | `formatBadge()` : tag `null`/vide/espaces → `[STANDARD]`. `calculateAverageRating()` : filtrage des `null`, retour `0.0` si aucune note valide. `calculateTicketPrice()` : borne `>= 65` + remises **cumulatives** (deux `if` indépendants). |
+| **Branche / Pull Request** | `fix/issue-13-legacy-report` — PR à ouvrir (réf. `Closes #13`) |
+| **Test TNR (PHPUnit)** | `tests/Service/LegacyBoxOfficeServiceTest.php` (règles métier : badge, moyenne, tarifs — dont cas 65 ans, 64 ans, cumul abonné) et `tests/Controller/LegacyReportControllerTest.php` (HTTP 200 + valeurs rendues). Exécution : `php bin/phpunit` → **14 tests, 19 assertions, OK**. |
+| **Commit(s)** | `fix(legacy): corrige le HTTP 500 et les règles métier du rapport` (réf. `Closes #13`) |
+| **Vérification post-déploiement** | `GET /legacy/rapport` → HTTP 200 ; badge `[STANDARD]` pour l'entrée sans tag ; moyenne `0/5` sans note valide ; « Senior (65 ans) » = `9 €`, « Étudiant membre (16 ans, abonné) » = `7.2 €`. |
+
+**6. Suites à donner**
+
+- Aucune dette technique bloquante restante sur ce module.
+- Les gabarits orphelins `templates/catalog/*.twig` (non référencés par un contrôleur) sont identifiés comme *code mort* applicable à la maintenance préventive — hors périmètre de l'Issue #13.
+
+---
+
 ### RCA-XXX — <Titre court de l'incident>
 
 | Champ | Valeur |
