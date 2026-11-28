@@ -4,7 +4,10 @@
 
 {% block body %}
     <div class="container py-5">
-        <a href="{{ path('app_movie_index') }}" class="btn btn-outline-secondary mb-4">
+        <a
+            href="{{ path('app_movie_index') }}"
+            class="btn btn-outline-secondary mb-4"
+        >
             ← Retour au catalogue
         </a>
 
@@ -37,26 +40,47 @@
                 {% if movie.poster %}
                     <p>
                         <strong>Affiche :</strong>
-                        <a href="{{ movie.poster }}" target="_blank" rel="noopener">
+                        <a
+                            href="{{ movie.poster }}"
+                            target="_blank"
+                            rel="noopener"
+                        >
                             Voir l’affiche
                         </a>
                     </p>
                 {% endif %}
 
-                <h2 class="h5 mt-4">
-                    Synopsis
-                </h2>
+                <h2 class="h5 mt-4">Synopsis</h2>
 
                 <p>
                     {{ movie.synopsis|default('Aucun synopsis disponible.') }}
                 </p>
 
-                <a
-                    href="{{ path('app_movie_edit', { id: movie.id }) }}"
-                    class="btn btn-warning mt-3"
-                >
-                    Modifier ce film
-                </a>
+                <div class="d-flex flex-wrap gap-2 mt-4">
+                    <a
+                        href="{{ path('app_movie_edit', { id: movie.id }) }}"
+                        class="btn btn-warning"
+                    >
+                        Modifier ce film
+                    </a>
+
+                    <form
+                        method="post"
+                        action="{{ path('app_movie_delete', { id: movie.id }) }}"
+                        onsubmit="return confirm('Supprimer définitivement ce film ?');"
+                        class="m-0"
+                    >
+                        <input
+                            type="hidden"
+                            name="_token"
+                            value="{{ csrf_token('delete' ~ movie.id) }}"
+                        >
+
+                        <button type="submit" class="btn btn-danger">
+                            Supprimer ce film
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
