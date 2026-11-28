@@ -22,7 +22,7 @@
 | Élément | Information |
 | --- | --- |
 | **Application** | CinéTech — Catalogue culturel et avis de films (Symfony) |
-| **Dépôt GitHub** | `lotfichabane50-crypto/cinetech-Souhail` |
+| **Dépôt GitHub** | `lotfichabane50-crypto/cinetech-tma` |
 | **Référente Métier** | Claire Moreau — Responsable Exploitation & Marketing |
 | **Équipe TMA** | Prestataire Tierce Maintenance Applicative (développement, exploitation, qualité) |
 
@@ -98,8 +98,8 @@ Stack détectée à la lecture de [`composer.json`](file:///c:/laragon/www/cinet
 
 ```bash
 # 1. Cloner le dépôt
-git clone https://github.com/lotfichabane50-crypto/cinetech-Souhail.git
-cd cinetech-Souhail
+git clone https://github.com/lotfichabane50-crypto/cinetech-tma.git
+cd cinetech-tma
 
 # 2. Installer les dépendances PHP
 composer install
